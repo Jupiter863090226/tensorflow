@@ -449,9 +449,11 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
             filter_shape, out_backprop.shape(), dilations_, strides_, padding_,
             explicit_paddings_, data_format_, &dims));
 
+    TensorShape batched_filter_shape({dims.batch_size, filter_shape.dim_size(0), filter_shape.dim_size(1), filter_shape.dim_size(2), filter_shape.dim_size(3)});
+
     Tensor* filter_backprop;
     OP_REQUIRES_OK(context,
-                   context->allocate_output(0, filter_shape, &filter_backprop));
+                   context->allocate_output(0, batched_filter_shape, &filter_backprop));
 
     // If there is nothing to compute, return.
     if (filter_shape.num_elements() == 0) {
@@ -521,8 +523,8 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
 
     const size_t work_unit_size = size_A + size_B + size_C;
 
-    const size_t shard_size =
-        (target_working_set_size + work_unit_size - 1) / work_unit_size;
+    const size_t shard_size = 1;
+        //(target_working_set_size + work_unit_size - 1) / work_unit_size;
 
     Tensor col_buffer;
     OP_REQUIRES_OK(context,
@@ -540,6 +542,8 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
     const int output_offset = dims.spatial_dims[0].output_size *
                               dims.spatial_dims[1].output_size * dims.out_depth;
 
+    const int filter_offset = filter_total_size * dims.out_depth;
+
     const T* input_data = input.template flat<T>().data();
     T* col_buffer_data = col_buffer.template flat<T>().data();
     const T* out_backprop_data = out_backprop.template flat<T>().data();
@@ -552,8 +556,8 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
                              Eigen::Unaligned>
         ConstTensorMap;
 
-    TensorMap C(filter_backprop_data, filter_total_size, dims.out_depth);
-    C.setZero();
+    //TensorMap C(filter_backprop_data, filter_total_size, dims.out_depth);
+    //C.setZero();
 
     // Initialize contraction dims (we need to transpose 'A' below).
     Eigen::array<Eigen::IndexPair<Eigen::DenseIndex>, 1> contract_dims;
@@ -563,9 +567,9 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
     auto worker_threads = *(context->device()->tensorflow_cpu_worker_threads());
 
     for (int image_id = 0; image_id < dims.batch_size; image_id += shard_size) {
-      const int shard_limit =
-          std::min(static_cast<int>(shard_size),
-                   static_cast<int>(dims.batch_size) - image_id);
+      const int shard_limit = 1;
+          //std::min(static_cast<int>(shard_size),
+                   //static_cast<int>(dims.batch_size) - image_id);
 
       auto shard = [&input_data, &col_buffer_data, &dims, &pad_top, &pad_left,
                     &pad_bottom, &pad_right, &input_offset,
@@ -591,12 +595,15 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
                        filter_total_size);
       ConstTensorMap B(out_backprop_data, output_image_size * shard_limit,
                        dims.out_depth);
+      TensorMap C(filter_backprop_data, filter_total_size, dims.out_depth);
+      C.setZero();
 
       // Gradient with respect to filter.
       C.device(context->eigen_cpu_device()) += A.contract(B, contract_dims);
 
       input_data += input_offset * shard_limit;
       out_backprop_data += output_offset * shard_limit;
+      filter_backprop_data += filter_offset * shard_limit;
     }
   }
 
