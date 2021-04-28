@@ -239,6 +239,11 @@ class BiasGradOp : public OpKernel {
     if (context->GetAttr("data_format", &data_format).ok()) {
       OP_REQUIRES(context, FormatFromString(data_format, &data_format_),
                   errors::InvalidArgument("Invalid data format"));
+      // ********************************************************************************* modified here **********************************************************************************
+      OP_REQUIRES(context, data_format_ == FORMAT_NHWC,
+                  errors::InvalidArgument(
+                  "For now, zhaoxuncheng's BiasGradOp only supports NHWC."));
+      // ****************************************************************************** end of modification *******************************************************************************
     } else {
       data_format_ = FORMAT_NHWC;
     }
@@ -259,10 +264,15 @@ class BiasGradOp : public OpKernel {
         errors::InvalidArgument("BiasGrad requires tensor size <= int32 max"));
 
     int32 batch, height, width, depth, channel;
+    // ********************************************************************************* modified here **********************************************************************************
+    int32 batch_size = output_backprop.shape().dim_size(0);
+    // ****************************************************************************** end of modification *******************************************************************************
     GetBiasValueDims(output_backprop, data_format_, &batch, &height, &width,
                      &depth, &channel);
     Tensor* output = nullptr;
-    TensorShape output_shape{channel};
+    // ********************************************************************************* modified here **********************************************************************************
+    TensorShape output_shape{batch_size, channel};
+    // ****************************************************************************** end of modification *******************************************************************************
     OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
 
     if (channel == 0) {
@@ -283,14 +293,23 @@ class BiasGradOp : public OpKernel {
         redux(context->eigen_device<Device>(), three_dims, output_backprop,
               output, 1);
       } else {
-        const functor::ReduceOuterDimensions<
-            T, AccumT, T, Eigen::internal::scalar_sum_op<AccumT>>
-            redux;
-
-        Eigen::DSizes<Eigen::Index, 2> two_dims(batch * height * width * depth,
-                                                channel);
-        redux(context->eigen_device<Device>(), two_dims, output_backprop,
-              output);
+            // ********************************************************************************* modified here **********************************************************************************
+            int32 out_dims = 1;
+            for(int i = 1; i < output_backprop.dims() - 1; ++i){
+              out_dims *= output_backprop.dim_size(i);
+            }
+            const T* output_backprop_data = output_backprop.template flat<T>().data();
+            T* output_data = output->template flat<T>().data();
+            memset(output_data, 0, channel * sizeof(T));
+            for(int i = 0; i < out_dims; ++i){
+              for(int c = 0; c < channel; ++c){
+                output_data[c] += output_backprop_data[i * channel + c];
+              }
+            }
+            for(int i = 1; i < batch_size; ++i){
+              memcpy(output_data + i * channel, output_data, channel * sizeof(T));
+            }
+            // ****************************************************************************** end of modification *******************************************************************************
       }
     }
   }
