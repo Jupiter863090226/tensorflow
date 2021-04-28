@@ -20,6 +20,7 @@ limitations under the License.
 
 #include <algorithm>
 #include <vector>
+#include <iostream>
 
 #include "absl/base/dynamic_annotations.h"
 #include "tensorflow/core/framework/numeric_op.h"
@@ -628,11 +629,12 @@ class Conv2DCustomBackpropInputOp : public OpKernel {
     const bool use_parallel_contraction =
         dims.batch_size == 1 ||
         thread_work_unit_size >= min_thread_work_unit_size;
-
-    const size_t shard_size =
-        use_parallel_contraction
-            ? 1
-            : (target_working_set_size + work_unit_size - 1) / work_unit_size;
+    // *****************************************************************modified here*******************************************************************************
+    const size_t shard_size = 1;
+        //use_parallel_contraction
+            //? 1
+            //: (target_working_set_size + work_unit_size - 1) / work_unit_size;
+    // **************************************************************end of modification****************************************************************************
 
     Tensor col_buffer;
     OP_REQUIRES_OK(context,
@@ -656,10 +658,14 @@ class Conv2DCustomBackpropInputOp : public OpKernel {
 
     auto in_backprop_flat = in_backprop->template flat<T>();
     T* input_backprop_data = in_backprop_flat.data();
+    // *****************************************************************modified here*******************************************************************************
+    const T* result_src = input_backprop_data;
+    // **************************************************************end of modification****************************************************************************
     in_backprop_flat.device(context->eigen_device<Device>()) =
         in_backprop_flat.constant(T(0));
-
-    if (use_parallel_contraction) {
+    // *****************************************************************modified here*******************************************************************************
+    if (/*use_parallel_contraction*/false) {
+    // **************************************************************end of modification****************************************************************************
       typedef Eigen::TensorMap<Eigen::Tensor<T, 2, Eigen::RowMajor>,
                                Eigen::Unaligned>
           TensorMap;
@@ -694,9 +700,14 @@ class Conv2DCustomBackpropInputOp : public OpKernel {
     } else {
       for (int image_id = 0; image_id < dims.batch_size;
            image_id += shard_size) {
-        const int shard_limit =
-            std::min(static_cast<int>(shard_size),
-                     static_cast<int>(dims.batch_size) - image_id);
+        // *****************************************************************modified here*******************************************************************************
+        if(image_id == 0){
+        // **************************************************************end of modification****************************************************************************
+        // *****************************************************************modified here*******************************************************************************
+        const int shard_limit = 1;
+            //std::min(static_cast<int>(shard_size),
+                     //static_cast<int>(dims.batch_size) - image_id);
+        // **************************************************************end of modification****************************************************************************
 
         auto shard = [&context, &dims, &pad_top, &pad_left, &pad_bottom,
                       &pad_right, &output_image_size, &filter_total_size,
@@ -726,6 +737,13 @@ class Conv2DCustomBackpropInputOp : public OpKernel {
 
         input_backprop_data += input_offset * shard_limit;
         out_backprop_data += output_offset * shard_limit;
+        }
+        // *****************************************************************modified here*******************************************************************************
+        else{
+            memcpy(input_backprop_data, result_src, input_offset * sizeof(T));
+            input_backprop_data += input_offset;
+        }
+        // **************************************************************end of modification****************************************************************************
       }
     }
   }

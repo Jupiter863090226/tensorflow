@@ -318,7 +318,6 @@ class Conv2DBackpropFilterOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
-    std::cout << "Now in Conv2DBackpropFilterOp::Compute()" << std::endl;
     const Tensor& input = context->input(0);
     const Tensor& filter_sizes = context->input(1);
     const Tensor& out_backprop = context->input(2);
@@ -427,7 +426,6 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
-    std::cout << "Now in Conv2DCustomBackpropFilterOp::Compute()" << std::endl;
     const Tensor& input = context->input(0);
     const Tensor& filter_sizes = context->input(1);
     const Tensor& out_backprop = context->input(2);
